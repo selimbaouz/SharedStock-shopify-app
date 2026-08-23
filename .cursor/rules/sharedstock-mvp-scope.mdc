@@ -1,0 +1,53 @@
+---
+description: Spec MVP SharedStock — scope, modèle, logique métier et écrans autorisés
+alwaysApply: true
+---
+
+# SharedStock — MVP : sync inventaire bundle ↔ composants
+
+## Problème
+Un marchand vend un t-shirt bleu, un t-shirt rose, et un "pack duo" (1 bleu + 1 rose).
+Le pack a son propre stock affiché, mais ignore que le stock d'un composant peut
+être épuisé par des ventes à l'unité. Résultat : survente, remboursement, mauvais avis.
+
+## Scope — UNE seule fonctionnalité
+Relier un produit "bundle" à ses produits "composants" pour que :
+1. Le stock affiché du bundle reflète la vraie dispo (calculé depuis les composants)
+2. Quand le bundle est vendu, le stock des composants est décompté automatiquement
+3. Quand un composant est vendu à l'unité, le stock du bundle se met à jour aussitôt
+
+SharedStock ne fait QUE la synchronisation de stock. Le marchand crée son bundle
+comme aujourd'hui (app Bundles Shopify ou manuellement).
+
+Hors scope : créateur de bundle storefront, page produit custom, remises
+conditionnelles, bundles imbriqués, analytics de vente.
+
+## Stack
+- Shopify CLI, template Remix + Polaris + Prisma
+- SQLite en dev, Postgres (Railway) en prod
+- Auth OAuth gérée par le template Shopify CLI
+
+## Modèle Prisma — `BundleLink`
+Un bundle = plusieurs lignes (1 par composant) :
+- `shop` — domaine de la boutique
+- `bundleVariantId` — variant Shopify du pack
+- `componentVariantId` — variant Shopify d'un composant
+- `quantityNeeded` — unités de ce composant dans le bundle
+
+## Logique métier
+
+**A. Stock affiché du bundle** = `min(floor(stock_composant / quantityNeeded))`
+sur tous les composants. Exemple : 6 bleus, 10 roses, pack = 1+1 → stock pack = 6.
+
+**B. Recalcul** — webhook `inventory_levels/update` : si le stock d'un composant
+change, recalculer le bundle et pousser via Admin API (`inventoryLevel` GraphQL).
+
+**C. Décompte à l'achat** — webhook `orders/create` (ou `orders/paid`) : si la
+commande contient un bundle connu, décompter chaque composant
+(`qty commandée × quantityNeeded`).
+
+## Écrans admin (Polaris uniquement)
+1. Liste des liens — stock calculé + statut ("à jour" / "erreur de sync")
+2. Créer un lien — picker produit bundle, puis composants + qty nécessaire
+3. Détail d'un lien — historique de sync, modifier / supprimer
+4. Réglages — activer/désactiver la sync auto, logs d'erreurs

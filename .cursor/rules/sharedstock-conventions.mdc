@@ -1,0 +1,43 @@
+---
+description: Conventions SharedStock — calcul de stock, webhooks, Remix/Polaris, tests
+alwaysApply: true
+---
+
+# SharedStock — Conventions de projet
+
+App Shopify embarquée : sync d'inventaire bundle ↔ composants. UNE fonctionnalité
+(sync de stock), pas de créateur de bundle. Spec : règle `sharedstock-mvp-scope`.
+
+## Stack
+- Remix + Polaris + Prisma (template Shopify CLI ; aujourd'hui React Router = successeur Remix)
+- SQLite en dev, Postgres (Railway) en prod
+- Admin GraphQL : `inventoryLevel`, `inventorySetQuantities`
+- Webhooks : `inventory_levels/update`, `orders/create`
+
+## Données
+Table `BundleLink` : `shop`, `bundleVariantId`, `componentVariantId`, `quantityNeeded`.
+Un bundle = plusieurs lignes (une par composant).
+
+Un seul endroit calcule le stock disponible : `computeBundleAvailability`.
+Ne jamais dupliquer cette logique.
+
+```ts
+// ✅ GOOD — min + floor sur tous les composants
+floor(6 / 1) = 6, floor(10 / 1) = 10 → availability = 6
+
+// ❌ BAD — somme, moyenne, ou stock "propre" du bundle
+6 + 10 = 16  // survente garantie
+```
+
+## Logique non négociable
+- Stock bundle = `min(floor(stock_composant / quantityNeeded))` — jamais somme/moyenne
+- Un changement de stock composant recalcule le bundle, pas l'inverse
+- Le bundle n'a pas de stock propre : il est toujours dérivé
+- Décompte à la vente **idempotent** : ne jamais retraiter deux fois la même commande
+  si le webhook est rejoué
+
+## Code
+- TypeScript strict, routes Remix/React Router (loaders / actions)
+- UI = composants Polaris natifs, pas de custom CSS hors design system Shopify
+- Calcul de stock = fonctions pures testables, hors routes et hors handlers webhook
+- Logger chaque sync (succès / échec) pour l'écran de debug MVP
