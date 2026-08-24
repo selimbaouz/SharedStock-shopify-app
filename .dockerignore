@@ -1,3 +1,11 @@
 .cache
 build
 node_modules
+.git
+.env
+.shopify
+.react-router
+.cursor
+.claude
+*.md
+

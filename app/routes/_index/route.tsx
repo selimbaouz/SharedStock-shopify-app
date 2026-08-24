@@ -21,9 +21,10 @@ export default function App() {
   return (
     <div className={styles.index}>
       <div className={styles.content}>
-        <h1 className={styles.heading}>A short heading about [your app]</h1>
+        <h1 className={styles.heading}>Bundle stock that stays accurate</h1>
         <p className={styles.text}>
-          A tagline about [your app] that describes your value proposition.
+          SharedStock syncs inventory between a pack and its products, so you
+          don't oversell.
         </p>
         {showForm && (
           <Form className={styles.form} method="post" action="/auth/login">
@@ -39,18 +40,22 @@ export default function App() {
         )}
         <ul className={styles.list}>
           <li>
-            <strong>Product feature</strong>. Some detail about your feature and
-            its benefit to your customer.
+            <strong>Calculated pack stock</strong>. Shows real availability from
+            the products inside.
           </li>
           <li>
-            <strong>Product feature</strong>. Some detail about your feature and
-            its benefit to your customer.
+            <strong>Pack sale</strong>. Deducts each product automatically.
           </li>
           <li>
-            <strong>Product feature</strong>. Some detail about your feature and
-            its benefit to your customer.
+            <strong>Individual sale</strong>. Updates the pack as soon as a
+            product changes.
           </li>
         </ul>
+        <p className={styles.legal}>
+          <a href="/privacy">Privacy</a>
+          {" · "}
+          <a href="/terms">Terms</a>
+        </p>
       </div>
     </div>
   );

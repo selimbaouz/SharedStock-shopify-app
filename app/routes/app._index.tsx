@@ -1,250 +1,247 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import type {
   ActionFunctionArgs,
   HeadersFunction,
   LoaderFunctionArgs,
 } from "react-router";
-import { useFetcher } from "react-router";
+import { useFetcher, useLoaderData } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
-import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
+import { authenticate } from "../shopify.server";
+import prisma from "../db.server";
+import { HowItWorks } from "../components/HowItWorks";
+import {
+  deleteBundleLinks,
+  ensureComponentInventoryItemIds,
+  fetchVariantDetails,
+  fetchVariantInventory,
+} from "../lib/bundle-links.server";
+import { computeBundleAvailability } from "../lib/computeBundleAvailability.server";
+import {
+  EMPTY_STATE_COPY,
+  STOCK_CALCULATION_TOOLTIP,
+} from "../lib/help-copy";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
 
-  return null;
+  const links = await ensureComponentInventoryItemIds(
+    admin,
+    session.shop,
+    await prisma.bundleLink.findMany({
+      where: { shop: session.shop },
+    }),
+  );
+
+  const grouped = new Map<
+    string,
+    Array<{ componentVariantId: string; quantityNeeded: number }>
+  >();
+  for (const link of links) {
+    const components = grouped.get(link.bundleVariantId) ?? [];
+    components.push({
+      componentVariantId: link.componentVariantId,
+      quantityNeeded: link.quantityNeeded,
+    });
+    grouped.set(link.bundleVariantId, components);
+  }
+
+  const bundleVariantIds = [...grouped.keys()];
+  const componentVariantIds = [
+    ...new Set(links.map((link) => link.componentVariantId)),
+  ];
+
+  const details = await fetchVariantDetails(admin, bundleVariantIds);
+  const { quantities, queryFailed } = await fetchVariantInventory(
+    admin,
+    componentVariantIds,
+  );
+
+  const bundles = bundleVariantIds.map((bundleVariantId) => {
+    const components = grouped.get(bundleVariantId) ?? [];
+    const missingComponent = components.some(
+      (component) => !quantities.has(component.componentVariantId),
+    );
+
+    return {
+      bundleVariantId,
+      title: details.get(bundleVariantId)?.label ?? bundleVariantId,
+      componentCount: components.length,
+      calculatedStock:
+        queryFailed || missingComponent
+          ? null
+          : computeBundleAvailability(
+              components.map((component) => ({
+                variantId: component.componentVariantId,
+                availableQuantity:
+                  quantities.get(component.componentVariantId) ?? 0,
+                quantityNeeded: component.quantityNeeded,
+              })),
+            ),
+    };
+  });
+
+  return { bundles };
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
-  const { admin } = await authenticate.admin(request);
-  const color = ["Red", "Orange", "Yellow", "Green"][
-    Math.floor(Math.random() * 4)
-  ];
-  const response = await admin.graphql(
-    `#graphql
-      mutation populateProduct($product: ProductCreateInput!) {
-        productCreate(product: $product) {
-          product {
-            id
-            title
-            handle
-            status
-            variants(first: 10) {
-              edges {
-                node {
-                  id
-                  price
-                  barcode
-                  createdAt
-                }
-              }
-            }
-          }
-        }
-      }`,
-    {
-      variables: {
-        product: {
-          title: `${color} Snowboard`,
-        },
-      },
-    },
-  );
-  const responseJson = await response.json();
+  const { session } = await authenticate.admin(request);
+  const formData = await request.formData();
 
-  const product = responseJson.data!.productCreate!.product!;
-  const variantId = product.variants.edges[0]!.node!.id!;
+  if (formData.get("intent") !== "delete") {
+    return { deleted: false };
+  }
 
-  const variantResponse = await admin.graphql(
-    `#graphql
-    mutation shopifyReactRouterTemplateUpdateVariant($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
-      productVariantsBulkUpdate(productId: $productId, variants: $variants) {
-        productVariants {
-          id
-          price
-          barcode
-          createdAt
-        }
-      }
-    }`,
-    {
-      variables: {
-        productId: product.id,
-        variants: [{ id: variantId, price: "100.00" }],
-      },
-    },
-  );
+  const bundleVariantId = String(formData.get("bundleVariantId") ?? "").trim();
+  if (!bundleVariantId) {
+    return { deleted: false };
+  }
 
-  const variantResponseJson = await variantResponse.json();
-
-  return {
-    product: responseJson!.data!.productCreate!.product,
-    variant:
-      variantResponseJson!.data!.productVariantsBulkUpdate!.productVariants,
-  };
+  await deleteBundleLinks(session.shop, bundleVariantId);
+  return { deleted: true };
 };
 
-export default function Index() {
+export default function BundlesIndex() {
+  const { bundles } = useLoaderData<typeof loader>();
   const fetcher = useFetcher<typeof action>();
-
   const shopify = useAppBridge();
-  const isLoading =
-    ["loading", "submitting"].includes(fetcher.state) &&
-    fetcher.formMethod === "POST";
+  const [pendingDelete, setPendingDelete] = useState<{
+    bundleVariantId: string;
+    title: string;
+  } | null>(null);
 
   useEffect(() => {
-    if (fetcher.data?.product?.id) {
-      shopify.toast.show("Product created");
+    if (fetcher.data?.deleted && fetcher.state === "idle") {
+      shopify.toast.show("Link deleted");
+      setPendingDelete(null);
     }
-  }, [fetcher.data?.product?.id, shopify]);
+  }, [fetcher.data, fetcher.state, shopify]);
 
-  const generateProduct = () => fetcher.submit({}, { method: "POST" });
+  const isDeleting = fetcher.state !== "idle";
 
   return (
-    <s-page heading="Shopify app template">
-      <s-button slot="primary-action" onClick={generateProduct}>
-        Generate a product
+    <s-page heading="Bundles">
+      <s-button slot="primary-action" variant="primary" href="/app/bundles/new">
+        Create a link
+      </s-button>
+      <s-button slot="secondary-actions" href="/app/help">
+        How it works
       </s-button>
 
-      <s-section heading="Congrats on creating a new Shopify app 🎉">
-        <s-paragraph>
-          This embedded app template uses{" "}
-          <s-link
-            href="https://shopify.dev/docs/apps/tools/app-bridge"
-            target="_blank"
-          >
-            App Bridge
-          </s-link>{" "}
-          interface examples like an{" "}
-          <s-link href="/app/additional">additional page in the app nav</s-link>
-          , as well as an{" "}
-          <s-link
-            href="https://shopify.dev/docs/api/admin-graphql"
-            target="_blank"
-          >
-            Admin GraphQL
-          </s-link>{" "}
-          mutation demo, to provide a starting point for app development.
-        </s-paragraph>
-      </s-section>
-      <s-section heading="Get started with products">
-        <s-paragraph>
-          Generate a product with GraphQL and get the JSON output for that
-          product. Learn more about the{" "}
-          <s-link
-            href="https://shopify.dev/docs/api/admin-graphql/latest/mutations/productCreate"
-            target="_blank"
-          >
-            productCreate
-          </s-link>{" "}
-          mutation in our API references.
-        </s-paragraph>
-        <s-stack direction="inline" gap="base">
-          <s-button
-            onClick={generateProduct}
-            {...(isLoading ? { loading: true } : {})}
-          >
-            Generate a product
-          </s-button>
-          {fetcher.data?.product && (
-            <s-button
-              onClick={() => {
-                shopify.intents.invoke?.("edit:shopify/Product", {
-                  value: fetcher.data?.product?.id,
-                });
-              }}
-              target="_blank"
-              variant="tertiary"
-            >
-              Edit product
-            </s-button>
-          )}
-        </s-stack>
-        {fetcher.data?.product && (
-          <s-section heading="productCreate mutation">
-            <s-stack direction="block" gap="base">
-              <s-box
-                padding="base"
-                borderWidth="base"
-                borderRadius="base"
-                background="subdued"
-              >
-                <pre style={{ margin: 0 }}>
-                  <code>{JSON.stringify(fetcher.data.product, null, 2)}</code>
-                </pre>
-              </s-box>
-
-              <s-heading>productVariantsBulkUpdate mutation</s-heading>
-              <s-box
-                padding="base"
-                borderWidth="base"
-                borderRadius="base"
-                background="subdued"
-              >
-                <pre style={{ margin: 0 }}>
-                  <code>{JSON.stringify(fetcher.data.variant, null, 2)}</code>
-                </pre>
-              </s-box>
+      {bundles.length === 0 ? (
+        <>
+          <s-section>
+            <s-stack gap="base">
+              <s-paragraph>{EMPTY_STATE_COPY}</s-paragraph>
+              <s-button variant="primary" href="/app/bundles/new">
+                Create a link
+              </s-button>
             </s-stack>
           </s-section>
-        )}
-      </s-section>
+          <HowItWorks />
+        </>
+      ) : (
+        <s-section padding="none">
+          <s-table>
+            <s-table-header-row>
+              <s-table-header listSlot="primary">Bundle</s-table-header>
+              <s-table-header listSlot="labeled">Products</s-table-header>
+              <s-table-header listSlot="labeled">
+                <s-stack direction="inline" gap="small-200" alignItems="center">
+                  Available stock (calculated)
+                  <s-icon
+                    type="info"
+                    tone="info"
+                    interestFor="stock-calculation-tooltip"
+                  />
+                  <s-tooltip id="stock-calculation-tooltip">
+                    {STOCK_CALCULATION_TOOLTIP}
+                  </s-tooltip>
+                </s-stack>
+              </s-table-header>
+              <s-table-header listSlot="labeled">Status</s-table-header>
+              <s-table-header listSlot="labeled">Actions</s-table-header>
+            </s-table-header-row>
+            <s-table-body>
+              {bundles.map((bundle) => (
+                <s-table-row key={bundle.bundleVariantId}>
+                  <s-table-cell>{bundle.title}</s-table-cell>
+                  <s-table-cell>{bundle.componentCount}</s-table-cell>
+                  <s-table-cell>
+                    {bundle.calculatedStock === null ? (
+                      <s-badge tone="critical">Error</s-badge>
+                    ) : (
+                      bundle.calculatedStock
+                    )}
+                  </s-table-cell>
+                  <s-table-cell>
+                    <s-badge tone="success">Active</s-badge>
+                  </s-table-cell>
+                  <s-table-cell>
+                    <s-stack direction="inline" gap="small-200">
+                      <s-button
+                        variant="tertiary"
+                        icon="edit"
+                        accessibilityLabel="Edit"
+                        href={`/app/bundles/${encodeURIComponent(bundle.bundleVariantId)}`}
+                      />
+                      <s-button
+                        type="button"
+                        variant="tertiary"
+                        tone="critical"
+                        icon="delete"
+                        accessibilityLabel="Delete"
+                        commandFor="delete-bundle-modal"
+                        command="--show"
+                        disabled={isDeleting || undefined}
+                        onClick={() =>
+                          setPendingDelete({
+                            bundleVariantId: bundle.bundleVariantId,
+                            title: bundle.title,
+                          })
+                        }
+                      />
+                    </s-stack>
+                  </s-table-cell>
+                </s-table-row>
+              ))}
+            </s-table-body>
+          </s-table>
+        </s-section>
+      )}
 
-      <s-section slot="aside" heading="App template specs">
+      <s-modal id="delete-bundle-modal" heading="Delete this link?">
         <s-paragraph>
-          <s-text>Framework: </s-text>
-          <s-link href="https://reactrouter.com/" target="_blank">
-            React Router
-          </s-link>
+          {pendingDelete
+            ? `The link “${pendingDelete.title}” and all of its products will be removed.`
+            : "This link and all of its products will be removed."}
         </s-paragraph>
-        <s-paragraph>
-          <s-text>Interface: </s-text>
-          <s-link
-            href="https://shopify.dev/docs/api/app-home/using-polaris-components"
-            target="_blank"
-          >
-            Polaris web components
-          </s-link>
-        </s-paragraph>
-        <s-paragraph>
-          <s-text>API: </s-text>
-          <s-link
-            href="https://shopify.dev/docs/api/admin-graphql"
-            target="_blank"
-          >
-            GraphQL
-          </s-link>
-        </s-paragraph>
-        <s-paragraph>
-          <s-text>Database: </s-text>
-          <s-link href="https://www.prisma.io/" target="_blank">
-            Prisma
-          </s-link>
-        </s-paragraph>
-      </s-section>
-
-      <s-section slot="aside" heading="Next steps">
-        <s-unordered-list>
-          <s-list-item>
-            Build an{" "}
-            <s-link
-              href="https://shopify.dev/docs/apps/getting-started/build-app-example"
-              target="_blank"
-            >
-              example app
-            </s-link>
-          </s-list-item>
-          <s-list-item>
-            Explore Shopify&apos;s API with{" "}
-            <s-link
-              href="https://shopify.dev/docs/apps/tools/graphiql-admin-api"
-              target="_blank"
-            >
-              GraphiQL
-            </s-link>
-          </s-list-item>
-        </s-unordered-list>
-      </s-section>
+        <s-button
+          slot="secondary-actions"
+          commandFor="delete-bundle-modal"
+          command="--hide"
+        >
+          Cancel
+        </s-button>
+        <s-button
+          slot="primary-action"
+          variant="primary"
+          tone="critical"
+          commandFor="delete-bundle-modal"
+          command="--hide"
+          loading={isDeleting || undefined}
+          disabled={!pendingDelete || isDeleting || undefined}
+          onClick={() => {
+            if (!pendingDelete) return;
+            const data = new FormData();
+            data.set("intent", "delete");
+            data.set("bundleVariantId", pendingDelete.bundleVariantId);
+            fetcher.submit(data, { method: "POST" });
+          }}
+        >
+          Delete
+        </s-button>
+      </s-modal>
     </s-page>
   );
 }

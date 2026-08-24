@@ -2,7 +2,8 @@
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x", "linux-musl-openssl-3.0.x"]
 }
 
 // Note that some adapters may set a maximum length for the String type by default, please ensure your strings are long
@@ -31,4 +32,28 @@ model Session {
   emailVerified Boolean?  @default(false)
   refreshToken        String?
   refreshTokenExpires DateTime?
+}
+
+model BundleLink {
+  id                        String   @id @default(cuid())
+  shop                      String
+  bundleVariantId           String
+  componentVariantId        String
+  componentInventoryItemId  String?
+  quantityNeeded            Int      @default(1)
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+
+  @@index([shop, bundleVariantId])
+  @@index([shop, componentVariantId])
+  @@index([shop, componentInventoryItemId])
+}
+
+model ProcessedOrder {
+  id          String   @id @default(cuid())
+  shop        String
+  orderId     String
+  processedAt DateTime @default(now())
+
+  @@unique([shop, orderId])
 }
