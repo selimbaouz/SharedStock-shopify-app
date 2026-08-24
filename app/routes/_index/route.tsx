@@ -24,7 +24,8 @@ export default function App() {
         <h1 className={styles.heading}>Bundle stock that stays accurate</h1>
         <p className={styles.text}>
           SharedStock syncs inventory between a pack and its products, so you
-          don't oversell.
+          don&apos;t oversell. Open it from Shopify Admin → Apps after
+          installing.
         </p>
         {showForm && (
           <Form className={styles.form} method="post" action="/auth/login">

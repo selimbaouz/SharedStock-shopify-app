@@ -1,7 +1,7 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
 client_id = "054a2c85f7cf9d4939c9bdc5f8c033e6"
-application_url = "https://shopify.dev/apps/default-app-home"
+application_url = "https://sharedstock-shopify-app-production.up.railway.app"
 embedded = true
 name = "SharedStock"
 
@@ -51,8 +51,10 @@ api_version = "unstable"
   uri = "/events/products"
 
 [auth]
-redirect_urls = [ "https://shopify.dev/apps/default-app-home/api/auth" ]
+redirect_urls = [
+  "https://sharedstock-shopify-app-production.up.railway.app/auth/callback",
+  "https://sharedstock-shopify-app-production.up.railway.app/api/auth",
+]
 
 [build]
-include_config_on_deploy = true
 automatically_update_urls_on_dev = true

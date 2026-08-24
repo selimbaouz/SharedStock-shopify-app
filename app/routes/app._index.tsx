@@ -1,10 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type {
   ActionFunctionArgs,
   HeadersFunction,
   LoaderFunctionArgs,
 } from "react-router";
-import { useFetcher, useLoaderData } from "react-router";
+import { useFetcher, useLoaderData, useRevalidator } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
@@ -104,11 +104,16 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 export default function BundlesIndex() {
   const { bundles } = useLoaderData<typeof loader>();
   const fetcher = useFetcher<typeof action>();
+  const revalidator = useRevalidator();
   const shopify = useAppBridge();
+  const didRetryStock = useRef(false);
   const [pendingDelete, setPendingDelete] = useState<{
     bundleVariantId: string;
     title: string;
   } | null>(null);
+
+  const hasStockError = bundles.some((bundle) => bundle.calculatedStock === null);
+  const isRefreshing = revalidator.state === "loading";
 
   useEffect(() => {
     if (fetcher.data?.deleted && fetcher.state === "idle") {
@@ -116,6 +121,12 @@ export default function BundlesIndex() {
       setPendingDelete(null);
     }
   }, [fetcher.data, fetcher.state, shopify]);
+
+  useEffect(() => {
+    if (didRetryStock.current || !hasStockError) return;
+    didRetryStock.current = true;
+    revalidator.revalidate();
+  }, [hasStockError, revalidator]);
 
   const isDeleting = fetcher.state !== "idle";
 
@@ -127,6 +138,15 @@ export default function BundlesIndex() {
       <s-button slot="secondary-actions" href="/app/help">
         How it works
       </s-button>
+      {bundles.length > 0 ? (
+        <s-button
+          slot="secondary-actions"
+          loading={isRefreshing || undefined}
+          onClick={() => revalidator.revalidate()}
+        >
+          Refresh
+        </s-button>
+      ) : null}
 
       {bundles.length === 0 ? (
         <>
@@ -142,6 +162,12 @@ export default function BundlesIndex() {
         </>
       ) : (
         <s-section padding="none">
+          {hasStockError && !isRefreshing ? (
+            <s-banner tone="warning" heading="Couldn’t load available stock">
+              Shopify didn’t return inventory for one or more products. Refresh,
+              or open the link and save it again.
+            </s-banner>
+          ) : null}
           <s-table>
             <s-table-header-row>
               <s-table-header listSlot="primary">Bundle</s-table-header>
@@ -168,14 +194,22 @@ export default function BundlesIndex() {
                   <s-table-cell>{bundle.title}</s-table-cell>
                   <s-table-cell>{bundle.componentCount}</s-table-cell>
                   <s-table-cell>
-                    {bundle.calculatedStock === null ? (
+                    {isRefreshing ? (
+                      <s-spinner size="small-100" />
+                    ) : bundle.calculatedStock === null ? (
                       <s-badge tone="critical">Error</s-badge>
                     ) : (
                       bundle.calculatedStock
                     )}
                   </s-table-cell>
                   <s-table-cell>
-                    <s-badge tone="success">Active</s-badge>
+                    {isRefreshing ? (
+                      <s-spinner size="small-100" />
+                    ) : bundle.calculatedStock === null ? (
+                      <s-badge tone="critical">Error</s-badge>
+                    ) : (
+                      <s-badge tone="success">Active</s-badge>
+                    )}
                   </s-table-cell>
                   <s-table-cell>
                     <s-stack direction="inline" gap="small-200">

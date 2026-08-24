@@ -65,7 +65,18 @@ export async function fetchVariantDetails(
       }`,
       { variables: { ids: uniqueIds } },
     );
-    const json = (await response.json()) as NodesResponse;
+    const json = (await response.json()) as NodesResponse & {
+      errors?: Array<{ message?: string }>;
+    };
+
+    if (json.errors?.length) {
+      console.error(
+        `[SharedStock] Failed to fetch variant details: ${json.errors
+          .map((error) => error.message)
+          .filter(Boolean)
+          .join("; ")}`,
+      );
+    }
 
     for (const node of json.data?.nodes ?? []) {
       if (!node?.id || !node.product?.id || !node.product.title) continue;
@@ -112,6 +123,12 @@ export async function fetchVariantInventory(
     };
 
     if (json.errors?.length) {
+      console.error(
+        `[SharedStock] Failed to fetch variant inventory: ${json.errors
+          .map((error) => error.message)
+          .filter(Boolean)
+          .join("; ")}`,
+      );
       return { quantities, queryFailed: true };
     }
 

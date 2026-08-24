@@ -58,7 +58,9 @@ export default function HelpPage() {
       <s-section heading="What does the Error badge mean?">
         <s-paragraph>
           A linked product could not be read (deleted, or inventory
-          unavailable). Open the link, check the products, then save again.
+          unavailable), or Shopify didn’t return stock yet. Click Refresh, or
+          open the link, check the products, then save again. Uninstalling the
+          app deletes your links.
         </s-paragraph>
       </s-section>
 
