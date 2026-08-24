@@ -1,6 +1,6 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
-client_id = "054a2c85f7cf9d4939c9bdc5f8c033e6"
+client_id = "fd79404572d59782d48fb530ee293614"
 application_url = "https://sharedstock-shopify-app-production.up.railway.app"
 embedded = true
 name = "SharedStock"
