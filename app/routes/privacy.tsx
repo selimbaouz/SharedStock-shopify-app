@@ -1,4 +1,4 @@
-import styles from "./legal.module.css";
+import styles from "../styles/legal.module.css";
 
 export const meta = () => [{ title: "Privacy policy — SharedStock" }];
 
