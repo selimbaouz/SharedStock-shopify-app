@@ -3,7 +3,7 @@
 client_id = "fd79404572d59782d48fb530ee293614"
 application_url = "https://sharedstock.up.railway.app"
 embedded = true
-name = "SharedStock"
+name = "Shared Stock Sync"
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes

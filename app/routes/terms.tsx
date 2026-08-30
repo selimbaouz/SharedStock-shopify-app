@@ -11,7 +11,7 @@ export default function TermsPage() {
           <a href="/privacy">Privacy</a>
         </p>
         <h1>Terms of service</h1>
-        <p className={styles.updated}>Last updated: August 24, 2026</p>
+        <p className={styles.updated}>Last updated: August 30, 2026</p>
         <p>
           These terms govern use of SharedStock, an embedded Shopify app from
           Brandionary. By installing the app, you agree to them.
@@ -41,7 +41,7 @@ export default function TermsPage() {
 
         <h2>Billing</h2>
         <p>
-          Paid use is billed through Shopify at $7.99 USD per month, with a
+          Paid use is billed through Shopify at $9.99 USD per month, with a
           7-day free trial, as shown on the Shopify App Store listing.
           Shopify handles charges, taxes, and cancellations. Uninstalling the
           app stops future charges according to Shopify&apos;s billing rules.
