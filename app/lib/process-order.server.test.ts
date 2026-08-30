@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   aggregateDeltasByInventoryItem,
+  buildAdjustComponentQuantityInput,
   parseOrderCreatePayload,
   planComponentDeductions,
 } from "./process-order.server";
@@ -82,6 +83,30 @@ describe("planComponentDeductions", () => {
         },
       ],
       skipped: ["gid://shopify/ProductVariant/blue"],
+    });
+  });
+});
+
+describe("buildAdjustComponentQuantityInput", () => {
+  it("opts out of compare-and-swap with an explicit null changeFromQuantity", () => {
+    expect(
+      buildAdjustComponentQuantityInput({
+        locationId: "gid://shopify/Location/2",
+        orderId: "123",
+        deltas: new Map([["gid://shopify/InventoryItem/11", -3]]),
+      }),
+    ).toEqual({
+      name: "available",
+      reason: "correction",
+      referenceDocumentUri: "gid://shopify/Order/123",
+      changes: [
+        {
+          inventoryItemId: "gid://shopify/InventoryItem/11",
+          locationId: "gid://shopify/Location/2",
+          delta: -3,
+          changeFromQuantity: null,
+        },
+      ],
     });
   });
 });

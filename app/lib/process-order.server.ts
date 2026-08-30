@@ -178,26 +178,48 @@ async function resolveShopLocationId(
   return json.data?.locations?.nodes?.[0]?.id ?? null;
 }
 
+export function buildAdjustComponentQuantityInput(options: {
+  locationId: string;
+  orderId: string;
+  deltas: Map<string, number>;
+}) {
+  return {
+    name: "available",
+    reason: "correction",
+    referenceDocumentUri: `gid://shopify/Order/${options.orderId}`,
+    changes: [...options.deltas.entries()]
+      .filter(([, delta]) => delta !== 0)
+      .map(([inventoryItemId, delta]) => ({
+        inventoryItemId,
+        locationId: options.locationId,
+        delta,
+        changeFromQuantity: null,
+      })),
+  };
+}
+
 async function adjustComponentQuantities(
   admin: GraphqlClient,
+  shop: string,
   locationGid: string,
   deltas: Map<string, number>,
   orderId: string,
 ): Promise<void> {
-  const changes = [...deltas.entries()]
-    .filter(([, delta]) => delta !== 0)
-    .map(([inventoryItemId, delta]) => ({
-      inventoryItemId,
-      locationId: locationGid,
-      delta,
-    }));
+  const input = buildAdjustComponentQuantityInput({
+    locationId: locationGid,
+    orderId,
+    deltas,
+  });
 
-  if (changes.length === 0) return;
+  if (input.changes.length === 0) return;
 
   const response = await admin.graphql(
     `#graphql
-    mutation SharedStockAdjustComponentQuantity($input: InventoryAdjustQuantitiesInput!) {
-      inventoryAdjustQuantities(input: $input) {
+    mutation SharedStockAdjustComponentQuantity(
+      $input: InventoryAdjustQuantitiesInput!
+      $idempotencyKey: String!
+    ) {
+      inventoryAdjustQuantities(input: $input) @idempotent(key: $idempotencyKey) {
         userErrors {
           field
           message
@@ -206,12 +228,8 @@ async function adjustComponentQuantities(
     }`,
     {
       variables: {
-        input: {
-          name: "available",
-          reason: "correction",
-          referenceDocumentUri: `gid://shopify/Order/${orderId}`,
-          changes,
-        },
+        idempotencyKey: `sharedstock:order:${shop}:${orderId}`,
+        input,
       },
     },
   );
@@ -300,7 +318,13 @@ export async function deductComponentsForOrder(options: {
       throw new Error("no location available for inventory adjustment");
     }
 
-    await adjustComponentQuantities(admin, locationGid, deltas, parsed.orderId);
+    await adjustComponentQuantities(
+      admin,
+      shop,
+      locationGid,
+      deltas,
+      parsed.orderId,
+    );
 
     const soldBundles = [
       ...new Set(deductions.map((deduction) => deduction.bundleVariantId)),

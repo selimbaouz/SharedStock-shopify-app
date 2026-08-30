@@ -209,16 +209,41 @@ async function fetchVariantInventoryAtLocation(
   return nodes;
 }
 
+export function buildSetBundleQuantityInput(options: {
+  inventoryItemId: string;
+  locationId: string;
+  quantity: number;
+  changeFromQuantity: number;
+}) {
+  return {
+    name: "available",
+    reason: "correction",
+    quantities: [
+      {
+        inventoryItemId: options.inventoryItemId,
+        locationId: options.locationId,
+        quantity: options.quantity,
+        changeFromQuantity: options.changeFromQuantity,
+      },
+    ],
+  };
+}
+
 async function setBundleAvailableQuantity(
   admin: GraphqlClient,
   inventoryItemId: string,
   locationGid: string,
   quantity: number,
+  changeFromQuantity: number,
+  idempotencyKey: string,
 ): Promise<void> {
   const response = await admin.graphql(
     `#graphql
-    mutation SharedStockSetBundleQuantity($input: InventorySetQuantitiesInput!) {
-      inventorySetQuantities(input: $input) {
+    mutation SharedStockSetBundleQuantity(
+      $input: InventorySetQuantitiesInput!
+      $idempotencyKey: String!
+    ) {
+      inventorySetQuantities(input: $input) @idempotent(key: $idempotencyKey) {
         userErrors {
           field
           message
@@ -227,18 +252,13 @@ async function setBundleAvailableQuantity(
     }`,
     {
       variables: {
-        input: {
-          name: "available",
-          reason: "correction",
-          ignoreCompareQuantity: true,
-          quantities: [
-            {
-              inventoryItemId,
-              locationId: locationGid,
-              quantity,
-            },
-          ],
-        },
+        idempotencyKey,
+        input: buildSetBundleQuantityInput({
+          inventoryItemId,
+          locationId: locationGid,
+          quantity,
+          changeFromQuantity,
+        }),
       },
     },
   );
@@ -352,6 +372,8 @@ export async function syncBundlesForInventoryUpdate(options: {
         inventoryItemId,
         locationGid,
         nextQuantity,
+        previousQuantity,
+        `sharedstock:bundle:${shop}:${inventoryItemId}:${locationGid}:${previousQuantity}:${nextQuantity}`,
       );
       console.log(
         `[SharedStock] Synced bundle ${plan.bundleVariantId} on ${shop}: ${previousQuantity} → ${nextQuantity}`,

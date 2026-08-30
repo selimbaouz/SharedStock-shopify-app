@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { toInventoryItemLookupId } from "./shopify-ids";
 import {
+  buildSetBundleQuantityInput,
   parseInventoryUpdatePayload,
   planBundleAvailabilityUpdates,
   toShopifyGid,
@@ -50,6 +51,30 @@ describe("parseInventoryUpdatePayload", () => {
     expect(parseInventoryUpdatePayload({})).toEqual({
       inventoryItemId: null,
       locationId: null,
+    });
+  });
+});
+
+describe("buildSetBundleQuantityInput", () => {
+  it("uses changeFromQuantity instead of the removed compare-and-swap fields", () => {
+    expect(
+      buildSetBundleQuantityInput({
+        inventoryItemId: "gid://shopify/InventoryItem/1",
+        locationId: "gid://shopify/Location/2",
+        quantity: 6,
+        changeFromQuantity: 10,
+      }),
+    ).toEqual({
+      name: "available",
+      reason: "correction",
+      quantities: [
+        {
+          inventoryItemId: "gid://shopify/InventoryItem/1",
+          locationId: "gid://shopify/Location/2",
+          quantity: 6,
+          changeFromQuantity: 10,
+        },
+      ],
     });
   });
 });
